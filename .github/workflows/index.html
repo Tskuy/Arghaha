@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Financial Tracker Flexible</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body{font-family:Arial;background:linear-gradient(135deg,#0f172a,#020617);color:#fff;padding:20px}
+.container{max-width:900px;margin:auto}
+.card{background:#111827;padding:16px;border-radius:18px;margin-bottom:15px}
+.balance-box{background:linear-gradient(135deg,#0284c7,#38bdf8);padding:20px;border-radius:18px;margin-bottom:15px}
+.balance-amount{font-size:32px;font-weight:bold}
+input,button{width:100%;padding:10px;margin:6px 0;border-radius:12px;border:none}
+input{background:#1f2937;color:#fff}
+button{background:#3b82f6;color:white;font-weight:bold}
+.account{display:flex;gap:6px;margin-bottom:6px}
+.account input{flex:1}
+.small{font-size:12px;color:#cbd5f5}
+.item{padding:10px;border-bottom:1px solid #1f2937}
+.plus{color:#22c55e}
+.minus{color:#ef4444}
+.chart-box{height:260px}
+canvas{width:100%!important;height:100%!important}
+.more{color:#60a5fa;text-align:center;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="balance-box">
+ <div>Total Saldo</div>
+ <div class="balance-amount" id="totalSaldo">Rp0</div>
+ <div class="small" id="breakdown"></div>
+</div>
+
+<div class="card">
+<input type="date" id="date">
+<div id="accounts"></div>
+<button onclick="addAccount()">+ Tambah Sumber Dana</button>
+<button onclick="tambahData()">Simpan</button>
+</div>
+
+<div class="card" id="list"></div>
+<div class="more" onclick="toggleMore()">Show more</div>
+
+<div class="card chart-box">
+<canvas id="chart"></canvas>
+</div>
+
+</div>
+
+<script>
+let data = JSON.parse(localStorage.getItem('saldoData')) || [];
+let showAll=false;
+let chart=null;
+
+function addAccount(name='',value=''){
+ const container=document.getElementById('accounts');
+ const div=document.createElement('div');
+ div.className='account';
+ div.innerHTML=`
+  <input placeholder="Nama (Dana, Bank, dll)" value="${name}">
+  <input type="number" placeholder="Saldo" value="${value}">
+ `;
+ container.appendChild(div);
+}
+
+// default 2 kolom biar gak kosong
+addAccount();
+addAccount();
+
+function tambahData(){
+ const date=document.getElementById('date').value;
+ if(!date) return alert('Tanggal dulu');
+
+ const rows=document.querySelectorAll('.account');
+ let accounts=[];
+ let total=0;
+
+ rows.forEach(r=>{
+  const name=r.children[0].value;
+  const val=parseInt(r.children[1].value)||0;
+  if(name){
+    accounts.push({name,value:val});
+    total+=val;
+  }
+ });
+
+ const obj={date,total,accounts};
+
+ const existing=data.find(d=>d.date===date);
+ if(existing){Object.assign(existing,obj)}
+ else{data.push(obj)}
+
+ data.sort((a,b)=>new Date(a.date)-new Date(b.date));
+ localStorage.setItem('saldoData',JSON.stringify(data));
+ render();
+}
+
+function toggleMore(){showAll=!showAll;render()}
+
+function render(){
+ const list=document.getElementById('list');
+ list.innerHTML='';
+
+ let prev=null;
+ let displayData=showAll?data:data.slice(-3);
+
+ displayData.forEach(item=>{
+  const div=document.createElement('div');
+  div.className='item';
+
+  let html=`<b>${item.date}</b><br>Total: ${item.total}`;
+
+  if(prev){
+    const diff=item.total-prev.total;
+    html+=` <span class="${diff>=0?'plus':'minus'}">(${diff})</span>`;
+  }
+
+  let breakdown=item.accounts.map(a=>`${a.name}:${a.value}`).join(' + ');
+  html+=`<div class="small">${breakdown}</div>`;
+
+  div.innerHTML=html;
+  list.appendChild(div);
+  prev=item;
+ });
+
+ const last=data[data.length-1];
+ if(last){
+  document.getElementById('totalSaldo').innerText='Rp'+last.total;
+  document.getElementById('breakdown').innerText=last.accounts.map(a=>`${a.name}:${a.value}`).join(' + ');
+ }
+
+ updateChart();
+}
+
+function updateChart(){
+ const canvas=document.getElementById('chart');
+ if(!canvas || data.length<2) return;
+
+ if(chart) chart.destroy();
+
+ const ctx=canvas.getContext('2d');
+ const labels=data.map(d=>d.date);
+ const values=data.map(d=>d.total);
+
+ chart=new Chart(ctx,{
+  type:'line',
+  data:{labels,datasets:[{
+    data:values,
+    borderWidth:3,
+    tension:0.4,
+    fill:false,
+    segment:{borderColor:ctx=>ctx.p0.parsed.y<ctx.p1.parsed.y?'#22c55e':'#ef4444'}
+  }]},
+  options:{responsive:true,maintainAspectRatio:false}
+ });
+}
+
+render();
+</script>
+</body>
+</html>
