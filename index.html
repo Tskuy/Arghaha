@@ -3,14 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Financial Tracker Flexible</title>
+<title>Financial Tracker Final</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 <style>
 body{font-family:Arial;background:linear-gradient(135deg,#0f172a,#020617);color:#fff;padding:20px}
 .container{max-width:900px;margin:auto}
 .card{background:#111827;padding:16px;border-radius:18px;margin-bottom:15px}
 .balance-box{background:linear-gradient(135deg,#0284c7,#38bdf8);padding:20px;border-radius:18px;margin-bottom:15px}
 .balance-amount{font-size:32px;font-weight:bold}
+.hidden{filter:blur(8px)}
 input,button{width:100%;padding:10px;margin:6px 0;border-radius:12px;border:none}
 input{background:#1f2937;color:#fff}
 button{background:#3b82f6;color:white;font-weight:bold}
@@ -32,13 +34,19 @@ canvas{width:100%!important;height:100%!important}
  <div>Total Saldo</div>
  <div class="balance-amount" id="totalSaldo">Rp0</div>
  <div class="small" id="breakdown"></div>
+ <button onclick="toggleHide()">👁 Hide / Show</button>
 </div>
 
 <div class="card">
-<input type="date" id="date">
+<input type="date" id="date" onchange="loadExisting()">
 <div id="accounts"></div>
 <button onclick="addAccount()">+ Tambah Sumber Dana</button>
-<button onclick="tambahData()">Simpan</button>
+<button onclick="tambahData()">Simpan / Update</button>
+</div>
+
+<div class="card">
+<button onclick="exportExcel()">Export Excel</button>
+<input type="file" onchange="importExcel(event)">
 </div>
 
 <div class="card" id="list"></div>
@@ -54,9 +62,14 @@ canvas{width:100%!important;height:100%!important}
 let data = JSON.parse(localStorage.getItem('saldoData')) || [];
 let showAll=false;
 let chart=null;
+let hidden=false;
 
-function formatRupiah(num){
- return new Intl.NumberFormat('id-ID').format(num||0);
+function formatRupiah(num){return new Intl.NumberFormat('id-ID').format(num||0)}
+
+function toggleHide(){
+ hidden=!hidden;
+ document.getElementById('totalSaldo').classList.toggle('hidden',hidden);
+ document.getElementById('breakdown').classList.toggle('hidden',hidden);
 }
 
 function addAccount(name='',value=''){
@@ -64,14 +77,20 @@ function addAccount(name='',value=''){
  const div=document.createElement('div');
  div.className='account';
  div.innerHTML=`
-  <input placeholder="Nama (Dana, Bank, dll)" value="${name}">
+  <input placeholder="Nama" value="${name}">
   <input type="number" placeholder="Saldo" value="${value}">
  `;
  container.appendChild(div);
 }
 
-addAccount();
-addAccount();
+function loadExisting(){
+ const date=document.getElementById('date').value;
+ const container=document.getElementById('accounts');
+ container.innerHTML='';
+ const existing=data.find(d=>d.date===date);
+ if(existing){existing.accounts.forEach(acc=>addAccount(acc.name,acc.value));}
+ else{addAccount();addAccount();}
+}
 
 function tambahData(){
  const date=document.getElementById('date').value;
@@ -82,19 +101,14 @@ function tambahData(){
  let total=0;
 
  rows.forEach(r=>{
-  const name=r.children[0].value;
+  const name=r.children[0].value.trim();
   const val=parseInt(r.children[1].value)||0;
-  if(name){
-    accounts.push({name,value:val});
-    total+=val;
-  }
+  if(name){accounts.push({name,value:val});total+=val;}
  });
 
- const obj={date,total,accounts};
-
  const existing=data.find(d=>d.date===date);
- if(existing){Object.assign(existing,obj)}
- else{data.push(obj)}
+ if(existing){existing.accounts=accounts;existing.total=total;}
+ else{data.push({date,total,accounts});}
 
  data.sort((a,b)=>new Date(a.date)-new Date(b.date));
  localStorage.setItem('saldoData',JSON.stringify(data));
@@ -106,7 +120,6 @@ function toggleMore(){showAll=!showAll;render()}
 function render(){
  const list=document.getElementById('list');
  list.innerHTML='';
-
  let prev=null;
  let displayData=showAll?data:data.slice(-3);
 
@@ -114,15 +127,16 @@ function render(){
   const div=document.createElement('div');
   div.className='item';
 
-  let html=`<b>${item.date}</b><br>Total: Rp${formatRupiah(item.total)}`;
+  let html=`<b>${item.date}</b><br>Total: Rp${hidden?'••••':formatRupiah(item.total)}`;
 
   if(prev){
     const diff=item.total-prev.total;
     html+=` <span class="${diff>=0?'plus':'minus'}">(${diff>=0?'+':''}Rp${formatRupiah(diff)})</span>`;
   }
 
-  let breakdown=item.accounts.map(a=>`${a.name}:Rp${formatRupiah(a.value)}`).join(' + ');
-  html+=`<div class="small">${breakdown}</div>`;
+  let breakdown=item.accounts.map(a=>`${a.name}:${hidden?'••':formatRupiah(a.value)}`).join(' + ');
+  html+=`<div class="small">${breakdown}</div>
+  <button onclick="editData('${item.date}')">Edit</button>`;
 
   div.innerHTML=html;
   list.appendChild(div);
@@ -131,17 +145,22 @@ function render(){
 
  const last=data[data.length-1];
  if(last){
-  document.getElementById('totalSaldo').innerText='Rp'+formatRupiah(last.total);
-  document.getElementById('breakdown').innerText=last.accounts.map(a=>`${a.name}:Rp${formatRupiah(a.value)}`).join(' + ');
+  document.getElementById('totalSaldo').innerText=hidden?'••••':'Rp'+formatRupiah(last.total);
+  document.getElementById('breakdown').innerText=last.accounts.map(a=>`${a.name}:${hidden?'••':formatRupiah(a.value)}`).join(' + ');
  }
 
  updateChart();
 }
 
+function editData(date){
+ document.getElementById('date').value=date;
+ loadExisting();
+ window.scrollTo({top:0,behavior:'smooth'});
+}
+
 function updateChart(){
  const canvas=document.getElementById('chart');
  if(!canvas || data.length<2) return;
-
  if(chart) chart.destroy();
 
  const ctx=canvas.getContext('2d');
@@ -159,6 +178,29 @@ function updateChart(){
   }]},
   options:{responsive:true,maintainAspectRatio:false}
  });
+}
+
+function exportExcel(){
+ if(data.length===0) return alert('Data kosong');
+ const ws=XLSX.utils.json_to_sheet(data);
+ const wb=XLSX.utils.book_new();
+ XLSX.utils.book_append_sheet(wb,ws,'Data');
+ XLSX.writeFile(wb,'keuangan.xlsx');
+}
+
+function importExcel(e){
+ const file=e.target.files[0];
+ if(!file) return;
+ const reader=new FileReader();
+ reader.onload=function(evt){
+  const wb=XLSX.read(evt.target.result,{type:'binary'});
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  let json=XLSX.utils.sheet_to_json(ws);
+  data=json;
+  localStorage.setItem('saldoData',JSON.stringify(data));
+  render();
+ }
+ reader.readAsBinaryString(file);
 }
 
 render();
